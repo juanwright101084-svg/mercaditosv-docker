@@ -1,0 +1,31 @@
+# LÍNEA BASE (el "antes"): Dockerfile original de una sola etapa, solo para comparar tamaños.
+# No se usa en docker-compose.yml.
+FROM php:8.4-apache
+
+# Dependencias del sistema
+RUN apt-get update && apt-get install -y \
+    git \
+    unzip \
+    libpq-dev \
+    libzip-dev \
+    && docker-php-ext-install pdo pdo_pgsql pgsql zip \
+    && a2enmod rewrite
+
+# Composer
+COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
+
+WORKDIR /var/www/html
+
+# Copiar el proyecto
+COPY . .
+
+# Instalar dependencias de Laravel
+RUN composer install --no-dev --optimize-autoloader
+
+# Apache debe apuntar a /public
+RUN sed -i 's!/var/www/html!/var/www/html/public!g' /etc/apache2/sites-available/000-default.conf
+
+# Permisos
+RUN chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cache
+
+EXPOSE 80

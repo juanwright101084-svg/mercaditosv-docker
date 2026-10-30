@@ -1,0 +1,8 @@
+# LÍNEA BASE (el "antes"): imagen ingenua de una sola etapa, solo para comparar tamaños.
+# No se usa en docker-compose.yml.
+FROM node:20
+WORKDIR /app
+COPY . .
+RUN corepack enable && pnpm install && pnpm build
+EXPOSE 3000
+CMD ["pnpm", "start"]

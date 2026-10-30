@@ -1,0 +1,30 @@
+.git
+.gitignore
+.gitattributes
+.editorconfig
+.env
+.env.*
+vendor
+node_modules
+# Cachés generadas en Windows: traen rutas y paquetes dev que romperían el contenedor
+bootstrap/cache/*.php
+# Bases SQLite locales y temporales
+database/*.sqlite
+database/*.sqlite.*
+storage/logs/*
+storage/framework/cache/data/*
+storage/framework/sessions/*
+storage/framework/views/*
+public/build
+public/hot
+public/storage
+public/vendor/l5-swagger/*.map
+tests
+phpunit.xml
+Dockerfile
+Dockerfile.baseline
+.dockerignore
+Procfile
+railway.json
+curl
+*.md

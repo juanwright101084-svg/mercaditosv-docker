@@ -1,0 +1,9 @@
+.env
+node_modules/
+.next/
+vendor/
+*.log
+*.sqlite
+*.zip
+.DS_Store
+Thumbs.db

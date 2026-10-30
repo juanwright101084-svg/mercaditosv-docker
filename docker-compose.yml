@@ -1,0 +1,84 @@
+# Ecosistema completo: MySQL + API Laravel + Frontend Next.js
+#   docker compose up -d --build
+name: mercaditosv
+
+services:
+  db:
+    image: mysql:8.0
+    restart: unless-stopped
+    command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_unicode_ci"]
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Define MYSQL_ROOT_PASSWORD en .env}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:?Define MYSQL_DATABASE en .env}
+      MYSQL_USER: ${MYSQL_USER:?Define MYSQL_USER en .env}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?Define MYSQL_PASSWORD en .env}
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+    # Sin "ports": el 3306 solo existe dentro de la red de Docker
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p\"$$MYSQL_ROOT_PASSWORD\" --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks: [data]
+
+  backend:
+    build:
+      context: ./ejercicio-pedidos
+    image: mercaditosv-backend:latest
+    restart: unless-stopped
+    environment:
+      APP_NAME: MercaditoSV
+      APP_ENV: production
+      APP_DEBUG: "false"
+      APP_KEY: ${APP_KEY:?Define APP_KEY en .env (ver README)}
+      APP_URL: ${APP_URL:-http://localhost:8000}
+      LOG_CHANNEL: stderr
+      DB_CONNECTION: mysql
+      DB_HOST: db
+      DB_PORT: 3306
+      DB_DATABASE: ${MYSQL_DATABASE}
+      DB_USERNAME: ${MYSQL_USER}
+      DB_PASSWORD: ${MYSQL_PASSWORD}
+      SESSION_DRIVER: database
+      CACHE_STORE: database
+      QUEUE_CONNECTION: database
+      STRIPE_KEY: ${STRIPE_PUBLISHABLE_KEY:-}
+      STRIPE_SECRET: ${STRIPE_SECRET:-}
+      L5_SWAGGER_CONST_HOST: ${APP_URL:-http://localhost:8000}/api
+      L5_SWAGGER_GENERATE_ALWAYS: "false"
+      RUN_MIGRATIONS: "true"
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8000:80"
+    networks: [data, web]
+
+  frontend:
+    build:
+      context: ./tienda
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000/api}
+        NEXT_PUBLIC_IMAGE_URL: ${NEXT_PUBLIC_IMAGE_URL:-http://localhost:8000}
+        NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: ${STRIPE_PUBLISHABLE_KEY:-}
+    image: mercaditosv-frontend:latest
+    restart: unless-stopped
+    environment:
+      # Llamadas del servidor Next.js -> API, por la red interna (nombre de servicio "backend")
+      API_BASE_URL: http://backend/api
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+    networks: [web]
+
+volumes:
+  mysql_data:
+
+networks:
+  data:   # db <-> backend (la base de datos NO es alcanzable desde el frontend)
+  web:    # backend <-> frontend
