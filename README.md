@@ -104,6 +104,18 @@ docker compose down -v             # apaga y BORRA el volumen de MySQL
 - `db/init/01-charset.sql` montado en `/docker-entrypoint-initdb.d/` (solo lectura): fija `utf8mb4` en la base. Las tablas las crean las migraciones de Laravel.
 - `healthcheck` con `mysqladmin ping`, del que depende el backend.
 
+## Ejecución en GitHub Codespaces
+
+Las pruebas se hicieron en un Codespace. Allí el navegador no entra por `localhost`, así que en `.env` las tres URLs públicas usan el dominio reenviado del puerto 8000:
+
+```bash
+BASE="https://${CODESPACE_NAME}-8000.${GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN}"
+sed -i "s|^APP_URL=.*|APP_URL=$BASE|; s|^NEXT_PUBLIC_API_URL=.*|NEXT_PUBLIC_API_URL=$BASE/api|; s|^NEXT_PUBLIC_IMAGE_URL=.*|NEXT_PUBLIC_IMAGE_URL=$BASE|" .env
+gh codespace ports visibility 8000:public -c $CODESPACE_NAME   # el navegador necesita el puerto 8000 público
+```
+
+Cada vez que el Codespace se apaga y se vuelve a abrir, GitHub restablece la visibilidad de los puertos: hay que repetir el último comando para que carguen las imágenes.
+
 ## Medición: antes vs. después
 
 `Dockerfile.baseline` (en cada servicio) es la versión ingenua de una sola etapa; sirve para medir la mejora.
@@ -123,8 +135,10 @@ docker history mercaditosv-frontend:latest # capas
 
 | Imagen | Baseline | Optimizada | Reducción |
 |---|---|---|---|
-| frontend | _completar_ MB | _completar_ MB | _completar_ % |
-| backend | _completar_ MB | _completar_ MB | _completar_ % |
+| frontend (`tienda`) | 2.67 GB | 251 MB | −90.6 % |
+| backend (`ejercicio-pedidos`) | 954 MB | 285 MB | −70.1 % |
+
+Tamaños medidos con `docker images` (tamaño descomprimido en disco) en GitHub Codespaces. Baseline = `Dockerfile.baseline` de una sola etapa; optimizada = `Dockerfile` multi-stage.
 
 **Caché de capas**: cambia un solo archivo de código y vuelve a ejecutar `docker compose build`; las capas de dependencias aparecen como `CACHED`.
 
@@ -134,17 +148,25 @@ docker history mercaditosv-frontend:latest # capas
 docker compose exec backend php -m                 # extensiones cargadas
 docker compose exec backend ls vendor/bin          # no debe haber phpunit (se instaló con --no-dev)
 docker compose exec frontend whoami                # nextjs (no root)
-docker compose port db 3306                        # sin salida: no está publicado
+docker compose port db 3306                        # imprime ":0": el puerto NO está publicado en el host
 ```
+
+### Resultados de las verificaciones
+
+- `frontend`: `whoami` → `nextjs` (no corre como root).
+- `db`: `docker compose port db 3306` → `:0` (sin puerto publicado). `docker compose ps` lo muestra solo como `3306/tcp, 33060/tcp`.
+- `backend`: `php -m` lista `pdo_mysql`, `mbstring`, `openssl`, `tokenizer`, `xml`, `ctype` y `json`.
+- Los tres servicios llegan a `healthy` con `docker compose up -d --build`; la primera construcción en frío tardó unos 4–5 minutos y las siguientes unos 40 s gracias al caché de capas.
 
 ## Cambios hechos al código original
 
 Para poder contenerizarlo sin cambiar el comportamiento:
 
-1. `tienda/next.config.ts`: se añadió `output: "standalone"`.
+1. `tienda/next.config.ts`: se añadió `output: "standalone"` y `experimental.serverActions.allowedOrigins` (`localhost:3000` y `*.app.github.dev`). Lo segundo es necesario porque el proxy de GitHub Codespaces reescribe el encabezado `Origin` y Next.js bloqueaba las Server Actions (login y registro) con "Invalid Server Actions request".
 2. `tienda/src/app/actions/{auth,orders,payments}.ts` y `tienda/src/app/api/search/route.ts`: el código que corre **en el servidor** ahora prefiere `API_BASE_URL` (`http://backend/api`, red interna) y cae a `NEXT_PUBLIC_API_URL` si no existe. Sin esto, dentro de Docker el servidor intentaría llamar a `localhost:8000` (su propio contenedor).
 3. `ejercicio-pedidos/routes/web.php`: la ruta `/` devuelve JSON en lugar de la vista `welcome`.
-4. Se eliminaron archivos que no deben vivir en un repo público: bases `*.sqlite`, `storage/logs/laravel.log`, cachés de `bootstrap/cache`, `Procfile`/`railway.json` (despliegue anterior) y el `dockerfile` original de una sola etapa (queda como `Dockerfile.baseline`).
+4. `ejercicio-pedidos/app/Models/User.php`: `#[Fillable]` y `#[Hidden]` (atributos) pasaron a las propiedades `$fillable` y `$hidden`. Con el Laravel 12 instalado los atributos no se aplicaban y el registro fallaba con `MassAssignmentException` (el seeder no lo detectaba porque `db:seed` corre sin protección de asignación masiva).
+5. Se eliminaron archivos que no deben vivir en un repo público: bases `*.sqlite`, `storage/logs/laravel.log`, cachés de `bootstrap/cache`, `Procfile`/`railway.json` (despliegue anterior) y el `dockerfile` original de una sola etapa (queda como `Dockerfile.baseline`).
 
 ## Estructura del repositorio
 
@@ -167,4 +189,5 @@ Para poder contenerizarlo sin cambiar el comportamiento:
 ## Notas
 
 - Las claves de Stripe deben ser **de prueba** (`pk_test_…` / `sk_test_…`). El `.env` real nunca se sube al repositorio.
-- Si el build del frontend falla por la versión de Node con tu pnpm, cambia `ARG NODE_VERSION=20` a `22` (el enunciado recomienda `node:20-alpine`; Next 16 funciona con 20.9 o superior).
+- El frontend construye y corre con `node:20-alpine`, la imagen que recomienda el enunciado.
+- El usuario administrador que crea el seeder (`juan@test.com`) no tiene cliente asociado y no puede pagar; para comprar hay que registrarse desde `/registro`.
