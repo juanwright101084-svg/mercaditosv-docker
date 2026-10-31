@@ -1,0 +1,9 @@
+{
+  "name": "mercaditosv",
+  "image": "mcr.microsoft.com/devcontainers/universal:2",
+  "features": {
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {}
+  },
+  "forwardPorts": [3000, 8000],
+  "postAttachCommand": "gh codespace ports visibility 8000:public -c $CODESPACE_NAME || true"
+}
